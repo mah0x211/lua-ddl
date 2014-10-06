@@ -29,13 +29,33 @@ local util = require('util');
 local eval = util.eval;
 local evalfile = util.evalfile;
 local toReg = require('path').toReg;
-local DDL = require('halo').class.DDL;
 
 
-local function createMsg( src, isstr, prop )
-    local info = debug.getinfo( 3 );
+local function getSrcInfo( src, isstr )
+    local lv = 4;
+    local info = debug.getinfo( lv );
+    
+    while info do
+        if isstr == true then
+            if info.source == src then
+                break;
+            end
+        elseif info.source:sub(2) == src then
+            break;
+        end
+        
+        lv = lv + 1;
+        info = debug.getinfo( lv );
+    end
+    
+    return info;
+end
+
+
+local function createMsg( src, isstr, fmt, ... )
+    local info = getSrcInfo( src, isstr );
     local pos = 1;
-    local code;
+    local code = '';
     
     if isstr == true then
         for _, line in ipairs( util.string.split( src, '\n' ) ) do
@@ -48,36 +68,55 @@ local function createMsg( src, isstr, prop )
     else
         local file = io.open( info.source:sub( 2 ) );
         
-        for line in file:lines() do
-            if pos == info.currentline then
-                code = line;
-                break;
+        if file then
+            for line in file:lines() do
+                if pos == info.currentline then
+                    code = line;
+                    break;
+                end
+                pos = pos + 1;
             end
-            pos = pos + 1;
+            file:close();
         end
-        file:close();
     end
     
-    return ('attempt to define global variable: %q\ndata source at:\n\t%s:%d: %q'):format(
-        prop, info.short_src, info.currentline, code
+    if #{...} > 0 then
+        fmt = fmt:format( ... );
+    end
+    
+    return ('%s at %s:%d: %q'):format(
+        fmt, info.short_src, info.currentline, code
     );
 end
 
 
-local function reader( self, sandbox, onComplete )
-    return function( src, isstr )
+local function reader( self, sandbox, curried, onStart, onComplete )
+    return function( src, isstr, merge )
         local data = {};
-        local fn, err, co;
-        -- lock global
-        local env = setmetatable( sandbox, {
+        local index = getmetatable( self ).__index;
+        local abort = function( _, msg )
+            error( createMsg( src, isstr, msg ), -1 );
+        end
+        local env, fn, err;
+        
+        -- set curried functions
+        for k, v in pairs( curried ) do
+            sandbox[k] = v;
+        end
+        -- lock sandbox
+        env = setmetatable( sandbox, {
             __newindex = function( _, prop )
-                local msg = createMsg( src, isstr, prop );
-                error( msg, 3 );
+                error( createMsg( src, isstr, 
+                    'attempt to define global variable: %q', prop
+                ), -1 );
             end
         });
-
-        if type( src ) ~= 'string' then
-            return nil, 'first argument must be string';
+        
+        -- check merge data
+        if merge and type( merge ) ~= 'table' then
+            return nil, 'data must be table';
+        elseif type( src ) ~= 'string' then
+            return nil, 'src must be string';
         -- eval source
         elseif isstr == true then
             fn, err = eval( src, env );
@@ -94,45 +133,62 @@ local function reader( self, sandbox, onComplete )
         if err then
             return nil, err;
         end
-    
+        
         -- preprocess
         self.data = data;
-        -- run in coroutine
-        co = coroutine.create( fn );
-        err = select( 2, coroutine.resume( co ) );
-        if not err and coroutine.status( co ) == 'suspended' then
-            err = 'should not suspend coroutine';
-        end
+        onStart( self, merge );
+        index['abort'] = abort;
+        
+        err = select( 2, pcall( fn ) );
+        
         -- postprocess
+        index['abort'] = nil;
         data = not err and onComplete( self ) or nil;
         self.data = nil;
-    
+        -- unlock sandbox
+        setmetatable( sandbox, nil );
+        -- unset curried funcitons
+        for k, v in pairs( curried ) do
+            sandbox[k] = nil;
+        end
+
         return data, err;
     end
 end
 
 
 local function currying( self, method )
-    return function( ... )
-        return method( self, ... );
-    end;
+    return setmetatable({},{
+        __call = function( wrap, ... )
+            return method( self, true, ... );
+        end,
+        __newindex = function( wrap, ... )
+            return method( self, false, ... );
+        end
+    });
 end
 
 
-function DDL:init( sandbox )
+local DDL = require('halo').class.DDL;
+
+function DDL:init( sandbox, freeze )
     local index = getmetatable( self ).__index;
+    local onStart = index.onStart;
     local onComplete = index.onComplete;
+    local curried = {};
     
-    if type( onComplete ) ~= 'function' then
+    if type( onStart ) ~= 'function' then
+        error( 'delegate method "onStart" must be function' );
+    elseif type( onComplete ) ~= 'function' then
         error( 'delegate method "onComplete" must be function' );
-    elseif sandbox and type( sandbox ) ~= 'table' then
-        error( '"sandbox" must be returned table' );
-    else
+    elseif not sandbox then
         sandbox = {};
+    elseif type( sandbox ) ~= 'table' then
+        error( '"sandbox" must be returned table' );
     end
     
     -- remove unused methods
-    for _, k in ipairs({ 'init', 'constructor', 'onComplete' }) do
+    for _, k in ipairs({ 'init', 'constructor', 'onStart', 'onComplete' }) do
         rawset( index, k, nil );
     end
     
@@ -141,13 +197,16 @@ function DDL:init( sandbox )
         if sandbox[k] then
             error( ('%q already defined at sandbox table'):format( k ) );
         end
-        sandbox[k] = currying( self, v );
+        curried[k] = currying( self, v );
         index[k] = nil;
     end
     
-    return reader( self, sandbox, onComplete );
+    return reader( self, sandbox, curried, onStart, onComplete );
 end
 
+function DDL:onStart()
+    -- default: do nothing
+end
 
 function DDL:onComplete()
     return self.data;

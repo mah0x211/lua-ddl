@@ -49,48 +49,64 @@ local function setdata( data, field, ... )
 end
 
 
-function Sample:set1( ... )
-    setdata( self.data, 'set1', ... );
-end
-
-
-function Sample:set2( ... )
-    local this = self;
-    
-    setdata( self.data, 'set2', ... );
-    
-    return function( ... )
-        setdata( this.data, 'set2', ... );
+function Sample:set1( iscall, ... )
+    if not iscall then
+        self:abort('attempt to add new index');
+    else
+        setdata( self.data, 'set1', ... );
     end
 end
 
 
-function Sample:set3( ... )
-    local this = self;
-    local narg = setdata( self.data, 'set3', ... );
-    local nextArg;
-    
-    nextArg = function( ... )
-        narg = setdata( this.data, 'set3', ... );
-        return narg < 4 and nextArg or nil;
+function Sample:set2( iscall, ... )
+    if not iscall then
+        self:abort('attempt to add new index');
+    else
+        local this = self;
+        
+        setdata( self.data, 'set2', ... );
+        
+        return function( ... )
+            setdata( this.data, 'set2', ... );
+        end
     end
-    
-    return nextArg;
 end
 
 
-function Sample:sets( ... )
-    local this = self;
-    local nextArg;
-    
-    setdata( self.data, 'sets', ... );
-    
-    nextArg = function( ... )
-        setdata( this.data, 'sets', ... );
+function Sample:set3( iscall, ... )
+    if not iscall then
+        self:abort('attempt to add new index');
+    else
+        local this = self;
+        local narg = setdata( self.data, 'set3', ... );
+        local nextArg;
+        
+        nextArg = function( ... )
+            narg = setdata( this.data, 'set3', ... );
+            return narg < 4 and nextArg or nil;
+        end
+        
         return nextArg;
     end
-    
-    return nextArg;
+end
+
+
+function Sample:sets( iscall, ... )
+    if not iscall then
+        self:abort('attempt to add new index');
+    else
+        local this = self;
+        local nextArg;
+        
+        setdata( self.data, 'sets', ... );
+        
+        nextArg = function( ... )
+            setdata( this.data, 'sets', ... );
+            return nextArg;
+        end
+        
+        return nextArg;
+    end
 end
 
 
