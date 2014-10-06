@@ -33,15 +33,6 @@ Sample.inherits {
     'ddl.DDL'
 };
 
-function Sample:_sandbox()
-    return {};
-end
-
-function Sample.test( ... )
-    print( inspect( this ) );
-    print( 'test', inspect( this ), ... );
-end
-
 local function setdata( data, field, ... )
     local item = data[field];
     
