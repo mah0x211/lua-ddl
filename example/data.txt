@@ -1,0 +1,4 @@
+set1 'val1';
+set2 'val1' 'val2';
+set3 'val1' 'val2' 'val3';
+sets 'val1' 'val2' 'val3' 'val4' 'last_val';
