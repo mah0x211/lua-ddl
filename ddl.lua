@@ -148,7 +148,7 @@ local function reader( self, sandbox, curried, onStart, onComplete )
         -- unlock sandbox
         setmetatable( sandbox, nil );
         -- unset curried funcitons
-        for k, v in pairs( curried ) do
+        for k in pairs( curried ) do
             sandbox[k] = nil;
         end
 
