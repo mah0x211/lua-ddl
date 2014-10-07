@@ -159,10 +159,10 @@ end
 
 local function currying( self, method )
     return setmetatable({},{
-        __call = function( wrap, ... )
+        __call = function( _, ... )
             return method( self, true, ... );
         end,
-        __newindex = function( wrap, ... )
+        __newindex = function( _, ... )
             return method( self, false, ... );
         end
     });
