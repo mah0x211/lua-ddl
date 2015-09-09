@@ -25,14 +25,18 @@
   Created by Masatoshi Teruya on 14/10/05.
  
 --]]
-local util = require('util');
-local eval = util.eval;
-local evalfile = util.evalfile;
+-- modules
+local strsplit = require('util.string').split;
+local eval = require('util').eval;
+local evalfile = require('util').evalfile;
 local toReg = require('path').toReg;
+local getinfo = debug.getinfo;
+
+-- private functions
 
 local function getSrcInfo( src, isstr )
     local lv = 4;
-    local info = debug.getinfo( lv );
+    local info = getinfo( lv );
     
     while info do
         if isstr == true then
@@ -44,20 +48,20 @@ local function getSrcInfo( src, isstr )
         end
         
         lv = lv + 1;
-        info = debug.getinfo( lv );
+        info = getinfo( lv );
     end
     
     return info;
 end
 
 
-local function createMsg( src, isstr, fmt, ... )
+local function abortMsg( src, isstr, fmt, ... )
     local info = getSrcInfo( src, isstr );
     local pos = 1;
     local code = '';
     
     if isstr == true then
-        for _, line in ipairs( util.string.split( src, '\n' ) ) do
+        for _, line in ipairs( strsplit( src, '\n' ) ) do
             if pos == info.currentline then
                 code = line;
                 break;
@@ -88,13 +92,13 @@ local function createMsg( src, isstr, fmt, ... )
     );
 end
 
-
+-- source reader
 local function reader( self, env, onStart, onComplete )
     return function( src, isstr, merge )
         local data = {};
         local index = getmetatable( self ).__index;
         local abort = function( _, msg )
-            error( createMsg( src, isstr, msg ), -1 );
+            error( abortMsg( src, isstr, msg ), -1 );
         end
         local sandbox, fn, err;
         
@@ -114,7 +118,7 @@ local function reader( self, env, onStart, onComplete )
         setmetatable( sandbox, {
             __metatable = true,
             __newindex = function( _, prop )
-                error( createMsg( src, isstr, 
+                error( abortMsg( src, isstr, 
                     'attempt to define global variable: %q', prop
                 ), -1 );
             end
@@ -142,6 +146,7 @@ local function reader( self, env, onStart, onComplete )
         onStart( self, merge );
         index['abort'] = abort;
         
+        -- run ddl
         err = select( 2, pcall( fn ) );
         
         -- postprocess
@@ -154,11 +159,14 @@ local function reader( self, env, onStart, onComplete )
 end
 
 
+-- create ddl
 local function currying( self, method )
     return setmetatable({},{
+        -- calling
         __call = function( _, ... )
             return method( self, true, ... );
         end,
+        -- assignments
         __newindex = function( _, ... )
             return method( self, false, ... );
         end
@@ -166,7 +174,9 @@ local function currying( self, method )
 end
 
 
+-- class
 local DDL = require('halo').class.DDL;
+
 
 function DDL:init( sandbox )
     local index = getmetatable( self ).__index;
@@ -174,10 +184,12 @@ function DDL:init( sandbox )
     local onComplete = index.onComplete;
     local env = {};
     
+    -- check delegator
     if type( onStart ) ~= 'function' then
         error( 'delegate method "onStart" must be function' );
     elseif type( onComplete ) ~= 'function' then
         error( 'delegate method "onComplete" must be function' );
+    -- sandbox
     elseif sandbox == nil then
         sandbox = {};
     elseif type( sandbox ) ~= 'table' then
@@ -202,6 +214,7 @@ function DDL:init( sandbox )
         env[k] = v;
     end
 
+    -- return ddl reader
     return reader( self, env, onStart, onComplete );
 end
 
