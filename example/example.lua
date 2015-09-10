@@ -27,7 +27,7 @@
 --]]
 
 local inspect = require('util').inspect;
-local Sample = require('./sample').new();
+local Sample = require('./sampleDDL').new();
 
 local src = [[
     set1 'val1';

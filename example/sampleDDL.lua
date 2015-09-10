@@ -29,15 +29,15 @@
 local inspect = require('util').inspect;
 local DDL = require('ddl');
 
-local Sample = {};
+local SampleDDL = {};
 
 
-function Sample:_onStartDDL( merge )
+function SampleDDL:_onStartDDL( merge )
     return {};
 end
 
 
-function Sample:_onCompleteDDL( data )
+function SampleDDL:_onCompleteDDL( data )
     return data;
 end
 
@@ -58,29 +58,29 @@ local function setdata( data, field, ... )
 end
 
 
-function Sample:set1( data, ... )
+function SampleDDL:set1( data, ... )
     setdata( data, 'set1', ... );
     return false;
 end
 
 
-function Sample:set2( data, ... )
+function SampleDDL:set2( data, ... )
     return setdata( data, 'set2', ... ) < 2;
 end
 
 
-function Sample:set3( data, ... )
+function SampleDDL:set3( data, ... )
     return setdata( data, 'set3', ... ) < 3;
 end
 
 
-function Sample:sets( data, ... )
+function SampleDDL:sets( data, ... )
     setdata( data, 'sets', ... );
     return true;
 end
 
 
-function Sample:get( data, fn )
+function SampleDDL:get( data, fn )
     if type( fn ) ~= 'function' then
         return false, 'get must be function';
     end
@@ -91,7 +91,7 @@ end
 -- exports
 return {
     new = function( sandbox )
-        return DDL.new( Sample, sandbox );
+        return DDL.new( SampleDDL, sandbox );
     end    
 };
 
