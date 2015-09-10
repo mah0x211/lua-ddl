@@ -34,10 +34,12 @@ local src = [[
     set2 'val1' 'val2';
     set3 'val1' 'val2' 'val3';
     sets 'val1' 'val2' 'val3' 'val4' 'last_val';
+    function get()
+    end
 ]];
 local isstr = true;
 
 -- str
-print( inspect( assert( Sample( src, isstr ) ) ) );
+print( inspect( assert( Sample:eval( src, isstr ) ) ) );
 -- file
-print( inspect( assert( Sample( './data.txt' ) ) ) );
+print( inspect( assert( Sample:eval( './data.txt' ) ) ) );

@@ -27,11 +27,20 @@
 --]]
 
 local inspect = require('util').inspect;
-local Sample = require('halo').class.Sample;
+local DDL = require('ddl');
 
-Sample.inherits {
-    'ddl.DDL'
-};
+local Sample = {};
+
+
+function Sample:_onStartDDL( merge )
+    return {};
+end
+
+
+function Sample:_onCompleteDDL( data )
+    return data;
+end
+
 
 local function setdata( data, field, ... )
     local item = data[field];
@@ -49,72 +58,40 @@ local function setdata( data, field, ... )
 end
 
 
-function Sample:set1( iscall, ... )
-    if not iscall then
-        self:abort('attempt to add new index');
-    else
-        setdata( self.data, 'set1', ... );
+function Sample:set1( data, ... )
+    setdata( data, 'set1', ... );
+    return false;
+end
+
+
+function Sample:set2( data, ... )
+    return setdata( data, 'set2', ... ) < 2;
+end
+
+
+function Sample:set3( data, ... )
+    return setdata( data, 'set3', ... ) < 3;
+end
+
+
+function Sample:sets( data, ... )
+    setdata( data, 'sets', ... );
+    return true;
+end
+
+
+function Sample:get( data, fn )
+    if type( fn ) ~= 'function' then
+        return false, 'get must be function';
     end
+    
+    setdata( data, 'get', fn );
 end
 
-
-function Sample:set2( iscall, ... )
-    if not iscall then
-        self:abort('attempt to add new index');
-    else
-        local this = self;
-        
-        setdata( self.data, 'set2', ... );
-        
-        return function( ... )
-            setdata( this.data, 'set2', ... );
-        end
-    end
-end
-
-
-function Sample:set3( iscall, ... )
-    if not iscall then
-        self:abort('attempt to add new index');
-    else
-        local this = self;
-        local narg = setdata( self.data, 'set3', ... );
-        local nextArg;
-        
-        nextArg = function( ... )
-            narg = setdata( this.data, 'set3', ... );
-            return narg < 4 and nextArg or nil;
-        end
-        
-        return nextArg;
-    end
-end
-
-
-function Sample:sets( iscall, ... )
-    if not iscall then
-        self:abort('attempt to add new index');
-    else
-        local this = self;
-        local nextArg;
-        
-        setdata( self.data, 'sets', ... );
-        
-        nextArg = function( ... )
-            setdata( this.data, 'sets', ... );
-            return nextArg;
-        end
-        
-        return nextArg;
-    end
-end
-
-
-function Sample:onComplete()
-    print( 'complete' );
-    return self.data;
-end
-
-
-return Sample.exports;
+-- exports
+return {
+    new = function( sandbox )
+        return DDL.new( Sample, sandbox );
+    end    
+};
 
