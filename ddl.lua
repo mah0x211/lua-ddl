@@ -33,6 +33,24 @@ local toReg = require('path').toReg;
 local getinfo = debug.getinfo;
 
 -- private functions
+local function evalSrc( src, isstr, sandbox )
+    local err;
+    
+    -- eval source string
+    if isstr == true then
+        return eval( src, sandbox );
+    end
+    
+    -- eval file
+    -- relative to absolute
+    src, err = toReg( src );
+    if not err then
+        return evalfile( src, sandbox, 't' );
+    end
+    
+    return nil, err;
+end
+
 
 local function getSrcInfo( src, isstr )
     local lv = 4;
@@ -92,103 +110,18 @@ local function abortMsg( src, isstr, fmt, ... )
     );
 end
 
--- source reader
-local function reader( self, env, onStart, onComplete )
-    return function( src, isstr, merge )
-        local data = {};
-        local index = getmetatable( self ).__index;
-        local abort = function( _, msg )
-            error( abortMsg( src, isstr, msg ), -1 );
-        end
-        local sandbox, fn, err;
-        
-        -- check merge data
-        if merge and type( merge ) ~= 'table' then
-            return nil, 'data must be table';
-        elseif type( src ) ~= 'string' then
-            return nil, 'src must be string';
-        end
-        
-        -- copy env values into sandbox
-        sandbox = {};
-        for k, v in pairs( env ) do
-            sandbox[k] = v;
-        end
-        -- lock sandbox
-        setmetatable( sandbox, {
-            __metatable = true,
-            __newindex = function( _, prop )
-                error( abortMsg( src, isstr, 
-                    'attempt to define global variable: %q', prop
-                ), -1 );
-            end
-        });
-        
-        -- eval source
-        if isstr == true then
-            fn, err = eval( src, sandbox );
-        else
-            -- relative to absolute
-            src, err = toReg( src );
-            if not err then
-                -- eval file
-                fn, err = evalfile( src, sandbox, 't' );
-            end
-        end
-        
-        -- evaluation error
-        if err then
-            return nil, err;
-        end
-        
-        -- preprocess
-        self.data = data;
-        onStart( self, merge );
-        index['abort'] = abort;
-        
-        -- run ddl
-        err = select( 2, pcall( fn ) );
-        
-        -- postprocess
-        index['abort'] = nil;
-        data = not err and onComplete( self ) or nil;
-        self.data = nil;
-        
-        return data, err;
-    end
-end
-
-
--- create ddl
-local function currying( self, method )
-    return setmetatable({},{
-        -- calling
-        __call = function( _, ... )
-            return method( self, true, ... );
-        end,
-        -- assignments
-        __newindex = function( _, ... )
-            return method( self, false, ... );
-        end
-    });
-end
-
 
 -- class
 local DDL = require('halo').class.DDL;
 
-
-function DDL:init( sandbox )
-    local index = getmetatable( self ).__index;
-    local onStart = index.onStart;
-    local onComplete = index.onComplete;
-    local env = {};
+function DDL:init( delegate, sandbox )
+    local own = protected( self );
     
     -- check delegator
-    if type( onStart ) ~= 'function' then
-        error( 'delegate method "onStart" must be function' );
-    elseif type( onComplete ) ~= 'function' then
-        error( 'delegate method "onComplete" must be function' );
+    if type( delegate._onStartDDL ) ~= 'function' then
+        error( 'delegate._onStartDDL must be function' );
+    elseif type( delegate._onCompleteDDL ) ~= 'function' then
+        error( 'delegate._onCompleteDDL must be function' );
     -- sandbox
     elseif sandbox == nil then
         sandbox = {};
@@ -196,37 +129,106 @@ function DDL:init( sandbox )
         error( '"sandbox" must be table' );
     end
     
-    -- remove unused methods
-    for _, k in ipairs({ 'init', 'constructor', 'onStart', 'onComplete' }) do
-        rawset( index, k, nil );
+    -- save to protected
+    own.delegate = delegate;
+    own.env = {};
+    
+    -- create environment
+    for k, v in pairs( sandbox ) do
+        -- check the duplication
+        if delegate[k] then
+            error( ('%q already defined at DDL field'):format( k ) );
+        end
+        -- append sandbox values into env
+        own.env[k] = v;
     end
     
-    -- append carried index values into env
-    for k, v in pairs( index ) do
-        if sandbox[k] then
-            error( ('%q already defined at sandbox table'):format( k ) );
+    return self;
+end
+
+
+-- source reader
+function DDL:eval( src, isstr, merge )
+    local own = protected( self );
+    local delegate = own.delegate;
+    local abort = function( _, msg )
+        error( abortMsg( src, isstr, msg ), -1 );
+    end
+    local data = {};
+    local sandbox = {};
+    local fn, err, ok, method;
+    
+    -- check merge data
+    if merge and type( merge ) ~= 'table' then
+        return nil, 'data must be table';
+    elseif type( src ) ~= 'string' then
+        return nil, 'src must be string';
+    end
+    
+    -- create sandbox
+    for k, v in pairs( own.env ) do
+        sandbox[k] = v;
+    end
+    setmetatable( sandbox, {
+        -- protection
+        __metatable = true,
+        -- global assignments
+        __newindex = function( _, field, v )
+            method = delegate[field];
+            -- call delegate method
+            if type( method ) == 'function' then
+                ok, err = method( delegate, data, v );
+                if err then
+                    error( abortMsg( src, isstr, err ), -1 );
+                end
+            else
+                error( abortMsg( src, isstr, 'attempt to define global variable: %q', k ), -1 );
+            end
+        end,
+        
+        -- lookup field
+        __index = function( _, field )
+            method = delegate[field];
+            -- create proxy
+            if type( method ) == 'function' then
+                return setmetatable({},{
+                    -- protection
+                    __metatable = true,
+                    __newindex = function( _, k )
+                        error( abortMsg( src, isstr, 'attempt to define property: %q', k ), -1 );
+                    end,
+                    __index = function( _, k )
+                        error( abortMsg( src, isstr, 'attempt to undefined property: %q', k ), -1 );
+                    end,
+                    -- call delegate method
+                    __call = function( proxy, val )
+                        ok, err = method( delegate, data, val );
+                        if err then
+                            error( abortMsg( src, isstr, err ), -1 );
+                        -- can receive next value
+                        elseif ok then
+                            return proxy;
+                        end
+                    end
+                });
+            end
         end
-        env[k] = currying( self, v );
-        index[k] = nil;
+    });
+
+    -- eval source
+    fn, err = evalSrc( src, isstr, sandbox );
+    if err then
+        return nil, err;
     end
-    -- append sandbox values into env
-    for k, v in pairs( sandbox ) do
-        env[k] = v;
-    end
-
-    -- return ddl reader
-    return reader( self, env, onStart, onComplete );
+    
+    -- preprocess
+    data = delegate:_onStartDDL( merge );
+    -- run compiled source in protected mode
+    err = select( 2, pcall( fn ) );
+    -- postprocess
+    data = not err and delegate:_onCompleteDDL( data ) or nil;
+    
+    return data, err;
 end
-
-
-function DDL:onStart()
-    -- default: do nothing
-end
-
-
-function DDL:onComplete()
-    return self.data;
-end
-
 
 return DDL.exports;
