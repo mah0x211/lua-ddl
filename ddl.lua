@@ -182,7 +182,7 @@ function DDL:eval( src, isstr, merge )
                     error( abortMsg( src, isstr, err ), -1 );
                 end
             else
-                error( abortMsg( src, isstr, 'attempt to define global variable: %q', k ), -1 );
+                error( abortMsg( src, isstr, 'attempt to define global variable: %q', field ), -1 );
             end
         end,
         
