@@ -151,9 +151,6 @@ end
 function DDL:eval( src, isstr, merge )
     local own = protected( self );
     local delegate = own.delegate;
-    local abort = function( _, msg )
-        error( abortMsg( src, isstr, msg ), -1 );
-    end
     local data = {};
     local sandbox = {};
     local fn, err, ok, method;
