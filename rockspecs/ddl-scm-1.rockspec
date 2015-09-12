@@ -11,9 +11,8 @@ description = {
 }
 dependencies = {
     "lua >= 5.1",
-    "halo >= 1.1.0",
-    "path >= 1.0.1",
-    "util >= 1.3.3"
+    "path >= 1.0.4",
+    "util >= 1.4.1"
 }
 build = {
     type = "builtin",
