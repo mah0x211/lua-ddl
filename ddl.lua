@@ -32,6 +32,7 @@ local evalfile = require('util').evalfile;
 local toReg = require('path').toReg;
 local getinfo = debug.getinfo;
 
+
 -- private functions
 local function evalSrc( src, isstr, sandbox )
     local err;
@@ -111,46 +112,13 @@ local function abortMsg( src, isstr, fmt, ... )
 end
 
 
--- class
-local DDL = require('halo').class.DDL;
-
-function DDL:init( delegate, sandbox )
-    local own = protected( self );
-    
-    -- check delegator
-    if type( delegate._onStartDDL ) ~= 'function' then
-        error( 'delegate._onStartDDL must be function' );
-    elseif type( delegate._onCompleteDDL ) ~= 'function' then
-        error( 'delegate._onCompleteDDL must be function' );
-    -- sandbox
-    elseif sandbox == nil then
-        sandbox = {};
-    elseif type( sandbox ) ~= 'table' then
-        error( '"sandbox" must be table' );
-    end
-    
-    -- save to protected
-    own.delegate = delegate;
-    own.env = {};
-    
-    -- create environment
-    for k, v in pairs( sandbox ) do
-        -- check the duplication
-        if delegate[k] then
-            error( ('%q already defined at DDL field'):format( k ) );
-        end
-        -- append sandbox values into env
-        own.env[k] = v;
-    end
-    
-    return self;
-end
+-- metatable
+local DDL = {};
 
 
 -- source reader
 function DDL:eval( src, isstr, merge )
-    local own = protected( self );
-    local delegate = own.delegate;
+    local delegate = self.delegate;
     local data = {};
     local sandbox = {};
     local fn, err, ok, method;
@@ -163,7 +131,7 @@ function DDL:eval( src, isstr, merge )
     end
     
     -- create sandbox
-    for k, v in pairs( own.env ) do
+    for k, v in pairs( self.env ) do
         sandbox[k] = v;
     end
     setmetatable( sandbox, {
@@ -228,4 +196,50 @@ function DDL:eval( src, isstr, merge )
     return data, err;
 end
 
-return DDL.exports;
+
+local function new( delegate, sandbox )
+    local env;
+    
+    -- check delegator
+    if type( delegate._onStartDDL ) ~= 'function' then
+        error( 'delegate._onStartDDL must be function' );
+    elseif type( delegate._onCompleteDDL ) ~= 'function' then
+        error( 'delegate._onCompleteDDL must be function' );
+    -- sandbox
+    elseif sandbox == nil then
+        sandbox = {};
+    elseif type( sandbox ) ~= 'table' then
+        error( '"sandbox" must be table' );
+    end
+    
+    -- create environment
+    env = {};
+    for k, v in pairs( sandbox ) do
+        -- check the duplication
+        if delegate[k] then
+            error( ('%q already defined at DDL field'):format( k ) );
+        end
+        -- append sandbox values into env
+        env[k] = v;
+    end
+    
+    -- return ddl context
+    return setmetatable({},{
+        __metatable = false,
+        __newindex = function()
+            error('cannot change a protected object', 2 );
+        end,
+        __index = setmetatable({
+            delegate = delegate,
+            env = env
+        },{
+            __index = DDL
+        })
+    });
+end
+
+
+return {
+    new = new
+};
+
